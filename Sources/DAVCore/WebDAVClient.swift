@@ -424,14 +424,12 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     /// root on that server side). Acceptance still requires the anchor to be
     /// inside its validity period.
     private static func verifies(trust: SecTrust, certificate: SecCertificate) -> Bool {
-        guard let pinnedData = SecCertificateCopyData(certificate) else { return false }
-        let pinned = Data(pinnedData)
+        let pinned = Data(SecCertificateCopyData(certificate))
         for i in 0..<SecTrustGetCertificateCount(trust) {
-            guard let chainCert = SecTrustGetCertificateAtIndex(trust, i),
-                  let certData = SecCertificateCopyData(chainCert),
-                  Data(certData) == pinned else { continue }
+            guard let chainCert = SecTrustGetCertificateAtIndex(trust, i) else { continue }
+            guard Data(SecCertificateCopyData(chainCert)) == pinned else { continue }
             var start = CFTimeInterval(0), end = CFTimeInterval(0)
-            if SecCertificateGetValidInterval(chainCert, &start, &end) == errSuccess,
+            if SecCertificateGetValidInterval(chainCert, &start, &end) == 0,
                end > CFAbsoluteTimeGetCurrent() {
                 return true
             }
