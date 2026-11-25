@@ -13,6 +13,13 @@ struct AccountEditor: View {
     @State private var wanURLString: String
     @State private var username: String
     @State private var password: String
+    /// Cloudflare Access service token for the public endpoint (ID in plain
+    /// text, secret in the durable password store).
+    @State private var wanClientID: String
+    @State private var wanClientSecret: String
+    /// Fixed for the life of the editor: the account id keys the password and
+    /// token stores, so it must not change between the test and the save.
+    @State private var draftID: String
     @State private var pinnedCertificate: Data?
     @State private var importingCertificate = false
 
@@ -30,16 +37,20 @@ struct AccountEditor: View {
         _wanURLString = State(initialValue: account?.wanURLString ?? "")
         _username = State(initialValue: account?.username ?? "")
         _password = State(initialValue: account.flatMap { Passwords.password(for: $0.id) } ?? "")
+        _wanClientID = State(initialValue: account?.wanClientID ?? "")
+        _wanClientSecret = State(initialValue: account.map { AccountStore.cfSecret(for: $0.id) } ?? "")
+        _draftID = State(initialValue: account?.id ?? UUID().uuidString)
         _pinnedCertificate = State(initialValue: account?.pinnedCertificate)
     }
 
     private var draft: Account {
         Account(
-            id: original?.id ?? UUID().uuidString,
+            id: draftID,
             name: name.trimmingCharacters(in: .whitespaces).isEmpty ? (nameHostHint ?? "WebDAV") : name.trimmingCharacters(in: .whitespaces),
             lanURLString: lanURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             wanURLString: wanURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             username: username,
+            wanClientID: wanClientID,
             pinnedCertificate: pinnedCertificate
         )
     }
@@ -70,24 +81,24 @@ struct AccountEditor: View {
     /// G-01 shared storage unavailable · P-01 no stored copy · P-OK stored.
     private var signInFooter: String {
         guard let id = original?.id else {
-            return "首次保存：密码只需输入这一次，以后重装都在。 (First save: you only need to enter the password this once; it will persist through reinstalls.)"
+            return "首次保存：密码只需输入这一次，以后重装都在。"
         }
         let d = Passwords.diagnostic(for: id)
         var lines: [String] = []
         if !d.groupAvailable {
-            lines.append("G-01 共享存储不可用（签名配置未授权 App Group）：文件 App 扩展暂不可用，密码改存本机钥匙串。 (G-01 Shared storage unavailable (signing profile does not authorize the App Group): the Files app extension is not currently usable; the password is stored in the local keychain instead.)")
+            lines.append("G-01 共享存储不可用（签名配置没有授权 App Group）：文件 App 扩展暂时用不了，密码改存本机钥匙串。")
         }
         if d.inFile {
-            lines.append("P-OK 密码副本：共享存储 (P-OK Password copy: shared storage)")
+            lines.append("P-OK 密码副本：共享存储")
         } else if d.inKeychain {
-            lines.append("P-OK 密码副本：钥匙串 (P-OK Password copy: keychain)")
+            lines.append("P-OK 密码副本：钥匙串")
         } else if d.inLocalKeychain {
-            lines.append("P-OK 密码副本：本机钥匙串（重装保留） (P-OK Password copy: local keychain (preserved across reinstalls))")
+            lines.append("P-OK 密码副本：本机钥匙串（重装后保留）")
         } else {
-            lines.append("P-01 尚无密码副本：输入一次并保存 (P-01 No password copy yet: enter it once and save)")
+            lines.append("P-01 还没有密码副本：输入一次并保存")
         }
-        let availability = d.groupAvailable ? "" : "（不可用）(unavailable)"
-        lines.append("共享组 (Shared group): \(d.groupID)\(availability)")
+        let availability = d.groupAvailable ? "" : "（不可用）"
+        lines.append("共享组：\(d.groupID)\(availability)")
         return lines.joined(separator: "\n")
     }
 
@@ -99,7 +110,9 @@ struct AccountEditor: View {
                                       isWan: false, pinnedCertificate: pinnedCertificate))
         }
         if let url = draft.wanURL {
-            endpoints.append(Endpoint(url: url, username: username, password: password, isWan: true))
+            let headers = AccountStore.cfAccessHeaders(clientID: wanClientID, secret: wanClientSecret)
+            endpoints.append(Endpoint(url: url, username: username, password: password,
+                                      isWan: true, cfAccessHeaders: headers))
         }
         return endpoints
     }
@@ -108,39 +121,53 @@ struct AccountEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("LAN Address", text: $lanURLString, prompt: Text("http://192.168.1.10:8080/dav/"))
+                    TextField("局域网地址", text: $lanURLString, prompt: Text("http://192.168.1.10:8080/dav/"))
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    TextField("Public Address", text: $wanURLString, prompt: Text("https://dav.example.com/"))
+                    TextField("公网地址", text: $wanURLString, prompt: Text("https://dav.example.com/"))
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Addresses")
+                    Text("地址")
                 } footer: {
-                    Text("Fill in one or both. The LAN address (http or https) is used while it answers, so the app stays off the internet at home. The public address must be https and is used on cellular or when the LAN address doesn't answer.")
+                    Text("填一个或两个都填。局域网地址（http 或 https）只要能连上就优先用它，在家时不走外网。公网地址必须是 https，用蜂窝网络或局域网连不上时才会用它。")
                 }
 
                 Section {
-                    TextField("Name", text: $name, prompt: Text(draftHost ?? "Shown in Files"))
+                    TextField("名称", text: $name, prompt: Text(draftHost ?? "显示在文件 App 里的名字"))
                 } header: {
-                    Text("Name")
+                    Text("名称")
                 }
 
                 Section {
-                    TextField("User Name", text: $username)
+                    TextField("用户名", text: $username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    SecureField("Password", text: $password)
+                    SecureField("密码", text: $password)
                         .textContentType(.password)
                 } header: {
-                    Text("Sign In")
+                    Text("账号密码")
                 } footer: {
                     Text(signInFooter)
+                }
+
+                if !wanURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section {
+                        TextField("访问密钥 ID", text: $wanClientID)
+                            .textContentType(.username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        SecureField("访问密钥 Secret", text: $wanClientSecret)
+                    } header: {
+                        Text("公网登录（Cloudflare Access）")
+                    } footer: {
+                        Text("公网地址开了 Cloudflare Access 才需要填：在 Cloudflare 零信任里建一个 Service Token，把 ID 和 Secret 填这里。只对公网地址生效，局域网地址不带这两个头。")
+                    }
                 }
 
                 Section {
@@ -148,17 +175,17 @@ struct AccountEditor: View {
                         importingCertificate = true
                     } label: {
                         HStack {
-                            Text("Pinned Certificate")
+                            Text("固定证书")
                             Spacer()
-                            Text(pinnedCertificate == nil ? "Not Set" : "Set")
+                            Text(pinnedCertificate == nil ? "未设置" : "已设置")
                                 .foregroundStyle(.secondary)
                         }
                     }
                     if pinnedCertificate != nil {
-                        Button("Remove Certificate", role: .destructive) { pinnedCertificate = nil }
+                        Button("移除证书", role: .destructive) { pinnedCertificate = nil }
                     }
                 } footer: {
-                    Text("Only for a self-signed LAN address: the host must present exactly this certificate (.cer/.pem). Everything else uses normal system validation; other certificates are not trusted.")
+                    Text("只用于自签名的局域网地址：服务器必须出示的正是这张证书（.cer/.pem）。其他情况走系统正常校验，别的证书一律不信任。")
                 }
 
                 Section {
@@ -166,7 +193,7 @@ struct AccountEditor: View {
                         Task { await runTest() }
                     } label: {
                         HStack {
-                            Text("Test Connection")
+                            Text("测试连接")
                             Spacer()
                             testStatus
                         }
@@ -177,20 +204,20 @@ struct AccountEditor: View {
                     }
                 }
             }
-            .navigationTitle(original == nil ? "Add Server" : "Edit Server")
+            .navigationTitle(original == nil ? "添加接入点" : "编辑接入点")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await saveTapped() } }
+                    Button("保存") { Task { await saveTapped() } }
                         .disabled(!draftUsable || test == .running)
                 }
             }
-            .confirmationDialog("The connection test failed.", isPresented: $confirmSaveAnyway, titleVisibility: .visible) {
-                Button("Save Anyway") { Task { await save() } }
-                Button("Keep Editing", role: .cancel) {}
+            .confirmationDialog("连接测试没通过。", isPresented: $confirmSaveAnyway, titleVisibility: .visible) {
+                Button("仍然保存") { Task { await save() } }
+                Button("继续编辑", role: .cancel) {}
             }
             .fileImporter(isPresented: $importingCertificate, allowedContentTypes: [.data],
                           allowsMultipleSelection: false) { result in
@@ -220,8 +247,8 @@ struct AccountEditor: View {
         test = .running
         do {
             let (mode, items) = try await WebDAVClient.testConnection(endpoints: draftEndpoints)
-            let label = mode == .lan ? "LAN" : "Public"
-            test = .ok("\(label) · \(items) item\(items == 1 ? "" : "s")")
+            let label = mode == .lan ? "局域网" : "公网"
+            test = .ok("\(label) · \(items) 项")
             return true
         } catch {
             test = .failed("T-01 \(error.localizedDescription)")
@@ -246,6 +273,11 @@ struct AccountEditor: View {
     }
 
     private func save() async {
+        // Store the Cloudflare token secret with the same durability as the
+        // password (app-group file first), so Files can log in after a reinstall.
+        if !AccountStore.setCFSecret(wanClientSecret, for: draftID) {
+            model.lastError = "P-02 密码没能保存，重装后要重新输入。"
+        }
         await model.save(draft, password: password)
         dismiss()
     }

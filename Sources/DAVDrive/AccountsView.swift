@@ -28,11 +28,11 @@ struct AccountsView: View {
             List {
                 if model.accounts.isEmpty {
                     ContentUnavailableView {
-                        Label("No Servers", systemImage: "externaldrive.badge.wifi")
+                        Label("还没有接入点", systemImage: "externaldrive.badge.wifi")
                     } description: {
-                        Text("Add a WebDAV server and it shows up in the Files app under Locations.")
+                        Text("添加一个 WebDAV 服务器，它就会出现在文件 App 的「位置」里。")
                     } actions: {
-                        Button("Add Server") { editing = .new }
+                        Button("添加接入点") { editing = .new }
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
@@ -41,7 +41,7 @@ struct AccountsView: View {
                             row(account)
                         }
                     } footer: {
-                        Text("Tap the list icon on a server to read its folders right here. To use them in other apps, open the Files app, tap Browse and look under Locations. With one server, Files calls it DAV Drive. If syncing is stuck, swipe right on the server and tap Reset Sync.")
+                        Text("点服务器后面的列表图标，可以直接在这里看它的文件夹。要在别的 App 里用，就打开文件 App，点「浏览」，在「位置」里找它；只配一个服务器时，文件 App 里显示为 DAV Drive。同步卡住了，就向右滑那个服务器，点「重置同步」。")
                     }
                     Section {
                         NavigationLink("Ignore Rules") { IgnoreRulesView() }
@@ -54,7 +54,7 @@ struct AccountsView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Add Server", systemImage: "plus") { editing = .new }
+                    Button("添加接入点", systemImage: "plus") { editing = .new }
                 }
             }
             .sheet(item: $editing) { target in
@@ -67,21 +67,21 @@ struct AccountsView: View {
                 BrowserView(account: account)
             }
             .confirmationDialog(
-                "Reset \(resetting?.name ?? "")?",
+                "重置 \(resetting?.name ?? "")？",
                 isPresented: Binding(get: { resetting != nil }, set: { if !$0 { resetting = nil } }),
                 titleVisibility: .visible
             ) {
-                Button("Reset Sync", role: .destructive) {
+                Button("重置同步", role: .destructive) {
                     if let account = resetting { Task { await model.resetSync(account) } }
                 }
             } message: {
-                Text("Removes this server from Files and adds it back. Files on the server aren't touched; changes still waiting to upload and downloaded copies on this iPhone are discarded.")
+                Text("把这个服务器从文件 App 里移除再重新添加。服务器上的文件不受影响；还没上传的改动和这台 iPhone 上已下载的副本会丢弃。")
             }
-            .alert("Something Went Wrong", isPresented: Binding(
+            .alert("出错了", isPresented: Binding(
                 get: { model.lastError != nil },
                 set: { if !$0 { model.lastError = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button("好", role: .cancel) {}
             } message: {
                 Text(model.lastError ?? "")
             }
@@ -91,9 +91,9 @@ struct AccountsView: View {
     /// One line per configured address, LAN first.
     private func addressLines(_ account: Account) -> [String] {
         var lines: [String] = []
-        if account.hasLAN { lines.append("LAN · \(account.lanURLString)") }
-        if account.hasWAN { lines.append("Public · \(account.wanURLString)") }
-        return lines.isEmpty ? ["No address"] : lines
+        if account.hasLAN { lines.append("局域网 · \(account.lanURLString)") }
+        if account.hasWAN { lines.append("公网 · \(account.wanURLString)") }
+        return lines.isEmpty ? ["未配置地址"] : lines
     }
 
     private func row(_ account: Account) -> some View {
@@ -114,7 +114,7 @@ struct AccountsView: View {
                         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     if let lastError {
-                        Text("F-01 扩展报错 (Extension error) (\(lastError.when.formatted(date: .omitted, time: .shortened))): \(lastError.message)")
+                        Text("F-01 扩展报错（\(lastError.when.formatted(date: .omitted, time: .shortened))）：\(lastError.message)")
                             .font(.caption2)
                             .foregroundStyle(.red)
                             .lineLimit(3)
@@ -126,18 +126,18 @@ struct AccountsView: View {
                             .foregroundStyle(stopped ? Color.orange : Color.green)
                             .lineLimit(2)
                     } else {
-                        Text("F-05 扩展从未启动 (extension never ran)")
+                        Text("F-05 扩展从未启动")
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
                 }
                 Spacer()
-                Button("Browse", systemImage: "list.bullet.rectangle") {
+                Button("浏览", systemImage: "list.bullet.rectangle") {
                     browsing = account
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                Button("Open in Files", systemImage: "folder") {
+                Button("在文件 App 中打开", systemImage: "folder") {
                     Task { await model.openInFiles(account) }
                 }
                 .labelStyle(.iconOnly)
@@ -145,20 +145,20 @@ struct AccountsView: View {
             }
         }
         .swipeActions {
-            Button("Delete", systemImage: "trash", role: .destructive) {
+            Button("删除", systemImage: "trash", role: .destructive) {
                 Task { await model.delete(account) }
             }
         }
         .swipeActions(edge: .leading) {
-            Button("Reset Sync", systemImage: "arrow.clockwise") { resetting = account }
+            Button("重置同步", systemImage: "arrow.clockwise") { resetting = account }
                 .tint(.orange)
         }
         .contextMenu {
-            Button("Browse", systemImage: "list.bullet.rectangle") { browsing = account }
-            Button("Open in Files", systemImage: "folder") { Task { await model.openInFiles(account) } }
-            Button("Edit", systemImage: "pencil") { editing = .existing(account) }
-            Button("Reset Sync", systemImage: "arrow.clockwise") { resetting = account }
-            Button("Delete", systemImage: "trash", role: .destructive) { Task { await model.delete(account) } }
+            Button("浏览", systemImage: "list.bullet.rectangle") { browsing = account }
+            Button("在文件 App 中打开", systemImage: "folder") { Task { await model.openInFiles(account) } }
+            Button("编辑", systemImage: "pencil") { editing = .existing(account) }
+            Button("重置同步", systemImage: "arrow.clockwise") { resetting = account }
+            Button("删除", systemImage: "trash", role: .destructive) { Task { await model.delete(account) } }
         }
     }
 }

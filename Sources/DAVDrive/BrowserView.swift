@@ -25,10 +25,10 @@ struct BrowserView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
+                        Button("关闭") { dismiss() }
                     }
                     ToolbarItem(placement: .primaryAction) {
-                        Button("Up", systemImage: "chevron.up") {
+                        Button("上一级", systemImage: "chevron.up") {
                             if stack.count > 1 { stack.removeLast() }
                             Task { await load() }
                         }
@@ -44,11 +44,11 @@ struct BrowserView: View {
             ProgressView("Reading…")
         } else if let error, items.isEmpty {
             ContentUnavailableView {
-                Label("Can't Read This Folder", systemImage: "exclamationmark.triangle")
+                Label("这个文件夹读不出来", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(error)
             } actions: {
-                Button("Try Again") { Task { await load() } }
+                Button("重试") { Task { await load() } }
                     .buttonStyle(.borderedProminent)
             }
         } else if items.isEmpty {

@@ -298,6 +298,10 @@ enum FileProviderErrors {
         switch error {
         case DAVError.ignored:
             return NSFileProviderError(.noSuchItem)
+        case DAVError.loginRedirect:
+            // A refused login redirect is a credentials failure: tell the
+            // system to ask the user, instead of showing it as a broken folder.
+            return NSFileProviderError(.notAuthenticated)
         case DAVError.tooManyEntries:
             // A folder too large to list in one go: report it instead of
             // letting the extension run out of memory.

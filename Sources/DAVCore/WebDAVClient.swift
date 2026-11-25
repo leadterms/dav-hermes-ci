@@ -27,19 +27,24 @@ public enum DAVError: LocalizedError, Sendable {
     case badResponse
     case ignored
     case tooManyEntries(count: Int)
+    /// A redirect the client declined to follow: another host, or a login page
+    /// (Cloudflare Access / OpenList both bounce unauthenticated requests there).
+    case loginRedirect
 
     public var errorDescription: String? {
         switch self {
-        case .invalidURL: "The server address isn't a valid URL."
+        case .invalidURL: "服务器地址不是有效的网址。"
         case .http(let status) where status == 401 || status == 403:
-            "The server rejected the user name or password (HTTP \(status))."
-        case .http(404): "Not found on the server (HTTP 404)."
-        case .http(405): "The server doesn't allow that here (HTTP 405). Is this a WebDAV address?"
-        case .http(let status): "The server answered HTTP \(status)."
-        case .badResponse: "The server's reply isn't valid WebDAV."
-        case .ignored: "The item is hidden by the ignore rules."
+            "服务器不认这个账号或密码（HTTP \(status)）。"
+        case .http(404): "服务器上找不到（HTTP 404）。"
+        case .http(405): "服务器不允许这样做（HTTP 405），这个地址是 WebDAV 地址吗？"
+        case .http(let status): "服务器返回 HTTP \(status)。"
+        case .badResponse: "服务器的回应不是有效的 WebDAV。"
+        case .loginRedirect:
+            "被登录页拦住了：公网地址多半要求 Cloudflare Access 访问密钥，或者账号密码不对（HTTP 3xx）。"
+        case .ignored: "这一项被忽略规则隐藏了。"
         case .tooManyEntries(let count):
-            "The folder has \(count) items, more than this app lists at once. Narrow it down or add it to the ignore list."
+            "这个文件夹有 \(count) 项，超过了单次能列出的数量。换个更小的目录，或把它加到忽略列表。"
         }
     }
 
@@ -343,8 +348,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
         if let authorization = endpoint.basicAuthorization {
             request.setValue(authorization, forHTTPHeaderField: "Authorization")
         }
-        // Cloudflare Access rides only on the public endpoint; empty until the
-        // login / service-token work lands (single injection point).
+        // Cloudflare Access rides only on the public endpoint (single
+        // injection point), so the LAN address never carries the token.
         for (name, value) in endpoint.cfAccessHeaders {
             request.setValue(value, forHTTPHeaderField: name)
         }
@@ -353,6 +358,12 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
     private func check(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw DAVError.badResponse }
+        // Every redirect we would have followed was already followed; a 3xx
+        // reaching here is one we refused (another host, or a login page), so
+        // the credentials are what failed — not the folder path.
+        if (300..<400).contains(http.statusCode), http.statusCode != 304 {
+            throw DAVError.loginRedirect
+        }
         guard (200..<300).contains(http.statusCode) else { throw DAVError.http(status: http.statusCode) }
     }
 
@@ -375,8 +386,8 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
     /// URLSession turns redirected requests into GETs; WebDAV requests must
     /// keep their method, headers and body (servers redirect "folder" to "folder/").
-    /// Redirects to another host are refused outright: credentials (Basic now,
-    /// Cloudflare Access later) must never leave the host they were made for.
+    /// Redirects to another host are refused outright: credentials (Basic and
+    /// the Cloudflare Access token) must never leave the host they were made for.
     public func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

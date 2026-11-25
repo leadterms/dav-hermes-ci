@@ -32,18 +32,23 @@ public struct Account: Codable, Identifiable, Hashable, Sendable {
     /// only ever sits in front of this one.
     public var wanURLString: String
     public var username: String
+    /// Cloudflare Access service token ID for the public endpoint. The matching
+    /// secret is kept in the durable password store, not in this JSON.
+    public var wanClientID: String
     /// Optional pinned certificate for a self-signed LAN address: the host of
     /// that address must present exactly this certificate.
     public var pinnedCertificate: Data?
 
     public init(id: String = UUID().uuidString, name: String,
-                lanURLString: String = "", wanURLString: String = "", username: String,
+                lanURLString: String = "", wanURLString: String = "",
+                username: String, wanClientID: String = "",
                 pinnedCertificate: Data? = nil) {
         self.id = id
         self.name = name
         self.lanURLString = lanURLString
         self.wanURLString = wanURLString
         self.username = username
+        self.wanClientID = wanClientID
         self.pinnedCertificate = pinnedCertificate
     }
 
@@ -71,7 +76,7 @@ public struct Account: Codable, Identifiable, Hashable, Sendable {
     // MARK: Coding
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, lanURLString, wanURLString, username, pinnedCertificate
+        case id, name, lanURLString, wanURLString, username, wanClientID, pinnedCertificate
         /// Pre-dual-endpoint accounts stored one `urlString`; it was the public
         /// address, so it migrates to the WAN endpoint.
         case legacyURL = "urlString"
@@ -82,6 +87,7 @@ public struct Account: Codable, Identifiable, Hashable, Sendable {
         id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        wanClientID = try container.decodeIfPresent(String.self, forKey: .wanClientID) ?? ""
         lanURLString = try container.decodeIfPresent(String.self, forKey: .lanURLString) ?? ""
         wanURLString = try container.decodeIfPresent(String.self, forKey: .wanURLString) ?? ""
         pinnedCertificate = try container.decodeIfPresent(Data.self, forKey: .pinnedCertificate)
@@ -97,6 +103,7 @@ public struct Account: Codable, Identifiable, Hashable, Sendable {
         try container.encode(lanURLString, forKey: .lanURLString)
         try container.encode(wanURLString, forKey: .wanURLString)
         try container.encode(username, forKey: .username)
+        try container.encode(wanClientID, forKey: .wanClientID)
         try container.encodeIfPresent(pinnedCertificate, forKey: .pinnedCertificate)
     }
 }
@@ -116,6 +123,42 @@ public enum AccountStore {
 
     public static func account(id: String) -> Account? { load().first { $0.id == id } }
 
+    // MARK: Cloudflare Access
+    //
+    // A public endpoint behind Cloudflare Access answers 302 to a login page
+    // unless the request carries a service token; those two headers are what
+    // "logging in" means for a WebDAV client there. Only the public endpoint
+    // ever gets them, so the LAN address stays untouched.
+
+    /// Key suffix for the token secret in the durable password store.
+    public static func cfSecretKey(_ id: String) -> String { id + ".cfsecret" }
+
+    public static func cfSecret(for id: String) -> String {
+        Passwords.password(for: cfSecretKey(id)) ?? ""
+    }
+
+    @discardableResult
+    public static func setCFSecret(_ secret: String, for id: String) -> Bool {
+        let trimmed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            Passwords.delete(for: cfSecretKey(id))
+            return true
+        }
+        return Passwords.write(trimmed, for: cfSecretKey(id))
+    }
+
+    /// The headers a Cloudflare Access service token adds, or empty when the
+    /// account has no token configured.
+    public static func cfAccessHeaders(clientID: String, secret: String) -> [String: String] {
+        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clientID.isEmpty, !secret.isEmpty else { return [:] }
+        return [
+            "CF-Access-Client-Id": clientID,
+            "CF-Access-Client-Secret": secret,
+        ]
+    }
+
     /// The endpoint(s) an account is reachable at, in preference order.
     public static func endpoints(forAccountID id: String) throws -> [Endpoint] {
         guard let account = account(id: id) else { throw DAVError.invalidURL }
@@ -126,7 +169,9 @@ public enum AccountStore {
                                       isWan: false, pinnedCertificate: account.pinnedCertificate))
         }
         if let url = account.wanURL {
-            endpoints.append(Endpoint(url: url, username: account.username, password: password, isWan: true))
+            let headers = cfAccessHeaders(clientID: account.wanClientID, secret: cfSecret(for: id))
+            endpoints.append(Endpoint(url: url, username: account.username, password: password,
+                                      isWan: true, cfAccessHeaders: headers))
         }
         guard !endpoints.isEmpty else { throw DAVError.invalidURL }
         return endpoints

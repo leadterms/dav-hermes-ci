@@ -18,17 +18,17 @@ struct IgnoreRulesView: View {
                 }
                 .onDelete { directories.remove(atOffsets: $0) }
                 HStack {
-                    TextField("Add folder name", text: $newDirectory)
+                    TextField("添加文件夹名", text: $newDirectory)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onSubmit(addDirectory)
-                    Button("Add", action: addDirectory)
+                    Button("添加", action: addDirectory)
                         .disabled(newDirectory.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } header: {
-                Text("Folders Never Shown")
+                Text("不显示的文件夹")
             } footer: {
-                Text("Matched by exact name at any depth. Hiding large build trees keeps Files fast and the extension within its memory limit.")
+                Text("按名称精确匹配，任意层级都生效。隐藏大的编译目录能让文件 App 更快，也让扩展不超内存。")
             }
 
             Section {
@@ -37,28 +37,28 @@ struct IgnoreRulesView: View {
                 }
                 .onDelete { files.remove(atOffsets: $0) }
                 HStack {
-                    TextField("Add file name", text: $newFile)
+                    TextField("添加文件名", text: $newFile)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onSubmit(addFile)
-                    Button("Add", action: addFile)
+                    Button("添加", action: addFile)
                         .disabled(newFile.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } header: {
-                Text("Files Never Shown")
+                Text("不显示的文件")
             }
 
             Section {
-                Button("Restore Defaults") {
+                Button("恢复默认") {
                     directories = IgnoreRules.standard.directories.sorted()
                     files = IgnoreRules.standard.files.sorted()
                     save()
                 }
             } footer: {
-                Text("Deleted or newly added pieces (including the trash folder) are not protected — removing .davtrash makes the trash visible in the normal tree.")
+                Text("删除的或新增的目录（包括回收站目录）不受保护——去掉 .davtrash 后，回收站会出现在正常目录树里。")
             }
         }
-        .navigationTitle("Ignore Rules")
+        .navigationTitle("忽略规则")
         .onChange(of: directories) { _, _ in save() }
         .onChange(of: files) { _, _ in save() }
     }

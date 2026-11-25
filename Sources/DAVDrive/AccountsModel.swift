@@ -34,7 +34,7 @@ final class AccountsModel {
         AccountStore.save(accounts)
         // Durable app-group copy (survives uninstall) + Keychain (best effort).
         if !Passwords.write(password, for: account.id), !password.isEmpty {
-            lastError = "P-02 密码未能保存，下次安装后需要重输。 (P-02 The password could not be saved; it will need to be re-entered on the next install.)"
+            lastError = "P-02 密码没能保存，重装后要重新输入。"
         }
         await register(account)
         await clearErrors(account)
@@ -82,7 +82,7 @@ final class AccountsModel {
         do {
             try await NSFileProviderManager.remove(domain(for: account))
         } catch {
-            lastError = "F-04 重置同步失败 (F-04 Failed to reset sync)"
+            lastError = "F-04 重置同步失败"
             return
         }
         await register(account)
@@ -92,11 +92,12 @@ final class AccountsModel {
         accounts.removeAll { $0.id == account.id }
         AccountStore.save(accounts)
         Passwords.delete(for: account.id)
+        Passwords.delete(for: AccountStore.cfSecretKey(account.id))
         EndpointStore.forget(account.id)
         do {
             try await NSFileProviderManager.remove(domain(for: account))
         } catch {
-            lastError = "F-03 从文件 App 移除失败 (F-03 Failed to remove from the Files app)"
+            lastError = "F-03 从文件 App 移除失败"
         }
     }
 
@@ -129,7 +130,7 @@ final class AccountsModel {
             components.path = url.path(percentEncoded: false)
             if let filesURL = components.url { await UIApplication.shared.open(filesURL) }
         } catch {
-            lastError = "O-01 无法打开文件 App (O-01 Unable to open the Files app)"
+            lastError = "O-01 打不开文件 App"
         }
     }
 
@@ -143,7 +144,7 @@ final class AccountsModel {
             do {
                 // Adding an existing identifier updates its display name.
                 try await NSFileProviderManager.add(domain(for: account))
-                ProviderDiagnostics.mark("A-OK 已注册 (registered) \(account.name)")
+                ProviderDiagnostics.mark("A-OK 已注册 \(account.name)")
                 return
             } catch {
                 let nsError = error as NSError
@@ -151,17 +152,17 @@ final class AccountsModel {
                    nsError.code == NSFileProviderError.Code.providerNotFound.rawValue {
                     // Happens when the extension isn't registered with iOS, e.g. when
                     // the app runs inside LiveContainer, which loads no extensions.
-                    lastError = "G-02 文件扩展不可用：iOS 找不到 DAV Drive 的文件扩展。常规安装（SideStore/iLoader 等，非 LiveContainer），且签名配置需授予 App Group（G-01）。 (G-02 Files extension unavailable: iOS cannot find DAV Drive's Files extension. Install it the standard way (SideStore/iLoader, etc., not LiveContainer), and the signing profile must grant the App Group (G-01).)"
+                    lastError = "G-02 文件扩展不可用：iOS 找不到 DAV Drive 的文件扩展。请按常规方式安装（SideStore、iLoader 等，不要用 LiveContainer），且签名配置要授予 App Group（见 G-01）。"
                     return
                 }
                 if nsError.domain != NSFileProviderErrorDomain {
-                    lastError = "F-02 无法添加到文件 (F-02 Cannot add to Files)"
+                    lastError = "F-02 无法添加到文件 App"
                     return
                 }
                 // A FileProvider-domain error: extension not up yet, retry.
             }
         }
-        lastError = "G-03 文件扩展未就绪：等 1 分钟重开 App，或重启手机后再添加一次。 (G-03 Files extension not ready: wait 1 minute and reopen the app, or restart your phone and add it again.)"
+        lastError = "G-03 文件扩展还没就绪：等一分钟重开 App，或重启手机后再添加一次。"
     }
 
     private func domain(for account: Account) -> NSFileProviderDomain {
