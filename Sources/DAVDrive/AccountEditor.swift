@@ -65,6 +65,27 @@ struct AccountEditor: View {
 
     private var draftUsable: Bool { draft.lanURL != nil || draft.wanURL != nil }
 
+    /// Says where the password comes from (or why it can't be kept), so an
+    /// empty password field is never a mystery.
+    private var signInFooter: String {
+        guard let id = original?.id else {
+            return "Enter the password once. It is kept in shared storage and comes back after every reinstall."
+        }
+        let diagnostic = Passwords.diagnostic(for: id)
+        var lines: [String] = []
+        if !diagnostic.groupAvailable {
+            lines.append("Shared storage is missing in this install, so the password can't be kept or read back, and Files can't reach the server. The signing profile must grant the app group.")
+        } else if diagnostic.inFile {
+            lines.append("Stored password loaded from shared storage.")
+        } else if diagnostic.inKeychain {
+            lines.append("Stored password loaded from the keychain.")
+        } else {
+            lines.append("No stored password on this install yet. Enter it once and tap Save.")
+        }
+        lines.append("Shared storage: \(diagnostic.groupID)")
+        return lines.joined(separator: "\n")
+    }
+
     /// The endpoints a connection test tries, LAN first.
     private var draftEndpoints: [Endpoint] {
         var endpoints: [Endpoint] = []
@@ -104,13 +125,17 @@ struct AccountEditor: View {
                     Text("Name")
                 }
 
-                Section("Sign In") {
+                Section {
                     TextField("User Name", text: $username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     SecureField("Password", text: $password)
                         .textContentType(.password)
+                } header: {
+                    Text("Sign In")
+                } footer: {
+                    Text(signInFooter)
                 }
 
                 Section {

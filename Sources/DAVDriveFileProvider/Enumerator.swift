@@ -8,12 +8,14 @@ final class FolderEnumerator: NSObject, NSFileProviderEnumerator {
     private let path: String
     private let client: WebDAVClient
     private let rootName: String
+    private let accountID: String
     private var task: Task<Void, Never>?
 
-    init(path: String, client: WebDAVClient, rootName: String) {
+    init(path: String, client: WebDAVClient, rootName: String, accountID: String) {
         self.path = path
         self.client = client
         self.rootName = rootName
+        self.accountID = accountID
     }
 
     func invalidate() { task?.cancel() }
@@ -28,6 +30,7 @@ final class FolderEnumerator: NSObject, NSFileProviderEnumerator {
                 observer.didEnumerate(items)
                 observer.finishEnumerating(upTo: nil)
             } catch {
+                ProviderDiagnostics.record(error, forAccountID: accountID)
                 observer.finishEnumeratingWithError(FileProviderErrors.map(error))
             }
         }
@@ -71,11 +74,13 @@ enum SyncAnchor {
 final class TrashEnumerator: NSObject, NSFileProviderEnumerator {
     private let client: WebDAVClient
     private let rootName: String
+    private let accountID: String
     private var task: Task<Void, Never>?
 
-    init(client: WebDAVClient, rootName: String) {
+    init(client: WebDAVClient, rootName: String, accountID: String) {
         self.client = client
         self.rootName = rootName
+        self.accountID = accountID
     }
 
     func invalidate() { task?.cancel() }
@@ -95,6 +100,7 @@ final class TrashEnumerator: NSObject, NSFileProviderEnumerator {
                 // No .davtrash folder on the server yet: the trash is empty.
                 observer.finishEnumerating(upTo: nil)
             } catch {
+                ProviderDiagnostics.record(error, forAccountID: accountID)
                 observer.finishEnumeratingWithError(FileProviderErrors.map(error))
             }
         }

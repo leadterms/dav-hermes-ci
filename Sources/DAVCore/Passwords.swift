@@ -56,4 +56,30 @@ public enum Passwords {
             try? FileManager.default.removeItem(at: url)
         }
     }
+
+    /// Where a password can currently be read back, and whether the shared
+    /// storage the durable copy lives in even exists on this install. The
+    /// editor shows this so a missing prefill is self-explanatory instead of
+    /// a mystery.
+    public struct PasswordDiagnostic {
+        public let inKeychain: Bool
+        public let inFile: Bool
+        public let groupID: String
+        public let groupAvailable: Bool
+    }
+
+    public static func diagnostic(for id: String) -> PasswordDiagnostic {
+        let keychain = Keychain.password(for: id) != nil
+        var file = false
+        var available = false
+        if let container = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) {
+            available = true
+            file = FileManager.default.fileExists(
+                atPath: container.appendingPathComponent("Passwords", isDirectory: true)
+                    .appendingPathComponent(id).path)
+        }
+        return .init(inKeychain: keychain, inFile: file,
+                     groupID: AppGroup.identifier, groupAvailable: available)
+    }
 }

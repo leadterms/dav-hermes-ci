@@ -3,8 +3,13 @@ import SwiftUI
 
 struct AccountsView: View {
     @Environment(AccountsModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var editing: EditTarget?
     @State private var resetting: Account?
+    /// Bumped when the app comes back to the foreground: the Files extension
+    /// records its errors in shared defaults from another process, so the
+    /// rows only see new ones on a redraw.
+    @State private var tick = 0
 
     enum EditTarget: Identifiable {
         case new, existing(Account)
@@ -43,6 +48,9 @@ struct AccountsView: View {
                 }
             }
             .navigationTitle("DAV Drive")
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { tick &+= 1 }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Add Server", systemImage: "plus") { editing = .new }
@@ -85,7 +93,9 @@ struct AccountsView: View {
     }
 
     private func row(_ account: Account) -> some View {
-        Button {
+        let _ = tick
+        let lastError = ProviderDiagnostics.lastError(forAccountID: account.id)
+        return Button {
             editing = .existing(account)
         } label: {
             HStack(spacing: 12) {
@@ -97,6 +107,12 @@ struct AccountsView: View {
                     Text(account.name).foregroundStyle(.primary)
                     ForEach(addressLines(account), id: \.self) { line in
                         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    if let lastError {
+                        Text("Files: \(lastError.message)")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .lineLimit(3)
                     }
                 }
                 Spacer()

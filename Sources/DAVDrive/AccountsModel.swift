@@ -36,6 +36,7 @@ final class AccountsModel {
         Passwords.write(password, for: account.id)
         await register(account)
         await clearErrors(account)
+        ProviderDiagnostics.clear(forAccountID: account.id)
         await refreshPreferredEndpoint(account)
         if let manager = NSFileProviderManager(for: domain(for: account)) {
             try? await manager.reimportItems(below: .rootContainer)

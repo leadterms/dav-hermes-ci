@@ -15,6 +15,10 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         super.init()
     }
 
+    private func record(_ error: Error) {
+        ProviderDiagnostics.record(error, forAccountID: domain.identifier.rawValue)
+    }
+
     func invalidate() {}
 
     /// Built per call so edits to the account in the app apply right away.
@@ -22,6 +26,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         do {
             return try AccountStore.client(forAccountID: domain.identifier.rawValue)
         } catch {
+            record(error)
             throw NSFileProviderError(.notAuthenticated)
         }
     }
@@ -54,6 +59,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 resource.isDirectory = resource.isDirectory || path.isEmpty
                 completionHandler(item(resource), nil)
             } catch {
+                record(error)
                 completionHandler(nil, FileProviderErrors.map(error))
             }
         }
@@ -74,6 +80,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 try await client.download(path, to: destination, progress: progress)
                 completionHandler(destination, item(resource), nil)
             } catch {
+                record(error)
                 completionHandler(nil, nil, FileProviderErrors.map(error))
             }
         }
@@ -112,7 +119,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 // MKCOL on something that appeared meanwhile.
                 completionHandler(nil, [], false, NSFileProviderError(.filenameCollision))
             } catch {
-                completionHandler(nil, [], false, await changeError(error))
+                let error = await changeError(error)
+                record(error)
+                completionHandler(nil, [], false, error)
             }
         }
     }
@@ -157,7 +166,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
                 // server's values win.
                 completionHandler(self.item(resource), [], false, nil)
             } catch {
-                completionHandler(nil, [], false, await changeError(error))
+                let error = await changeError(error)
+                record(error)
+                completionHandler(nil, [], false, error)
             }
         }
     }
@@ -236,7 +247,9 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
             } catch DAVError.http(status: 404) {
                 completionHandler(nil) // already gone
             } catch {
-                completionHandler(await changeError(error))
+                let error = await changeError(error)
+                record(error)
+                completionHandler(error)
             }
         }
     }
@@ -257,11 +270,17 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
 
     func enumerator(for identifier: NSFileProviderItemIdentifier,
                     request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
-        if identifier == .trashContainer {
-            return TrashEnumerator(client: try client(), rootName: rootName)
+        let accountID = domain.identifier.rawValue
+        do {
+            if identifier == .trashContainer {
+                return TrashEnumerator(client: try client(), rootName: rootName, accountID: accountID)
+            }
+            guard let path = identifier.path else { return EmptyEnumerator() }
+            return FolderEnumerator(path: path, client: try client(), rootName: rootName, accountID: accountID)
+        } catch {
+            record(error)
+            throw error
         }
-        guard let path = identifier.path else { return EmptyEnumerator() }
-        return FolderEnumerator(path: path, client: try client(), rootName: rootName)
     }
 }
 
