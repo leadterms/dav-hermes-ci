@@ -1,0 +1,69 @@
+name: Test IPA
+
+# Builds an UNSIGNED .ipa that can be re-signed with AltStore / SideStore / a
+# 99 USD developer certificate. No App Store Connect secrets needed, no Apple
+# ID needed: signing is skipped entirely, the re-signing tool does it on the
+# phone side.
+#
+# Cost: macOS runners are free in public repositories. In a private repository
+# a standard macOS runner costs 0.062 USD per minute (a 10 minute build is
+# about 0.62 USD and draws from the plan's included compute usage).
+#
+# Runs: by hand (Actions > Test IPA > Run workflow) or on every push to the
+# branch you are testing from. Set BUILD_SELF_HOSTED=true to use your own Mac
+# runner (labels self-hosted + macOS) instead of a GitHub-hosted one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      self_hosted:
+        description: Use the self-hosted Mac runner instead of a GitHub-hosted one
+        type: boolean
+        default: false
+  push:
+    branches: ["ios-build-test"]
+    paths-ignore:
+      - "**.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: ${{ inputs.self_hosted && fromJSON('["self-hosted","macOS"]') || 'macos-latest' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: scripts/xcode-prepare.sh "${{ github.run_number }}"
+
+      - name: Archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -project DAVDrive.xcodeproj -scheme DAVDrive -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/DAVDrive.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            -quiet
+
+      - name: Package IPA
+        run: scripts/package-ipa.sh "$RUNNER_TEMP/DAVDrive.xcarchive" "$RUNNER_TEMP/out"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAVDrive-unsigned-${{ github.run_number }}
+          path: ${{ runner.temp }}/out/*.ipa
+          if-no-files-found: error
+          retention-days: 14
