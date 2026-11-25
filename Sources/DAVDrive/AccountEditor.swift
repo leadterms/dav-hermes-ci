@@ -174,10 +174,19 @@ struct AccountEditor: View {
                             }
                         }
                         .disabled(draft.wanURL == nil)
-                        TextField("访问密钥 ID", text: $wanClientID)
+                        TextField("访问密钥 ID", text: $wanClientID,
+                                   prompt: Text("可粘整串 1454….access/cfast_…，自动拆开"))
                             .textContentType(.username)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .onChange(of: wanClientID) { value in
+                                // Cloudflare shows the token as "<client-id>/<secret>"
+                                // in one string: split a paste of that into both fields.
+                                if let slash = value.firstIndex(of: "/") {
+                                    wanClientID = String(value[..<slash])
+                                    wanClientSecret = String(value[value.index(after: slash)...])
+                                }
+                            }
                         SecureField("访问密钥 Secret", text: $wanClientSecret)
                     } header: {
                         Text("公网登录（Cloudflare Access）")
