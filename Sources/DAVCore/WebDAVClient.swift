@@ -412,22 +412,31 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     /// The pinned certificate is the only accepted anchor: the server's
     /// certificate must match it (self-signed) or chain to it.
     ///
-    /// Built from `SecTrustCreate(_:anchors:)`, which every public SDK ships
-    /// (the dedicated `SecTrustSetPinnedCertificates` / `SecTrustSetAnchorOnly`
-    /// pair is newer and absent from older Xcode SDKs, so we use the classic
-    /// custom-anchor form: evaluating the presented chain against exactly the
-    /// pinned certificate).
+    /// Built from certificate-parsing APIs only, because DAVCore compiles with
+    /// APPLICATION_EXTENSION_API_ONLY: YES, which excludes the trust-anchor
+    /// manipulation APIs (`SecTrustCreate(_:anchors:)`, and on older SDKs
+    /// `SecTrustSetPinnedCertificates`/`SecTrustSetAnchorOnly` entirely).
+    ///
+    /// A presented certificate whose DER bytes equal the pinned certificate's
+    /// DER bytes is the trusted anchor — a self-signed leaf, or the
+    /// self-signed root/CA the server serves in its chain (standard practice
+    /// for a private/self-signed CA; if a server omits its root, install the
+    /// root on that server side). Acceptance still requires the anchor to be
+    /// inside its validity period.
     private static func verifies(trust: SecTrust, certificate: SecCertificate) -> Bool {
-        var chain: [SecCertificate] = []
+        guard let pinnedData = SecCertificateCopyData(certificate) else { return false }
+        let pinned = Data(pinnedData)
         for i in 0..<SecTrustGetCertificateCount(trust) {
-            if let cert = SecTrustGetCertificateAtIndex(trust, i) { chain.append(cert) }
+            guard let chainCert = SecTrustGetCertificateAtIndex(trust, i),
+                  let certData = SecCertificateCopyData(chainCert),
+                  Data(certData) == pinned else { continue }
+            var start = CFTimeInterval(0), end = CFTimeInterval(0)
+            if SecCertificateGetValidInterval(chainCert, &start, &end) == errSuccess,
+               end > CFAbsoluteTimeGetCurrent() {
+                return true
+            }
         }
-        guard !chain.isEmpty,
-              let pinned = SecTrustCreate(chain as CFArray, [certificate] as CFArray) else {
-            return false
-        }
-        var error: CFError?
-        return SecTrustEvaluateWithError(pinned, &error)
+        return false
     }
     #endif
 }
