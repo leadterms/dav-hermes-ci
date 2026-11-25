@@ -114,7 +114,7 @@ public enum AccountStore {
     /// The endpoint(s) an account is reachable at, in preference order.
     public static func endpoints(forAccountID id: String) throws -> [Endpoint] {
         guard let account = account(id: id) else { throw DAVError.invalidURL }
-        let password = Keychain.password(for: id) ?? ""
+        let password = Passwords.password(for: id) ?? ""
         var endpoints: [Endpoint] = []
         if let url = account.lanURL {
             endpoints.append(Endpoint(url: url, username: account.username, password: password,

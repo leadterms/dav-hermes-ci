@@ -32,10 +32,8 @@ final class AccountsModel {
             accounts.append(account)
         }
         AccountStore.save(accounts)
-        let status = Keychain.setPassword(password, for: account.id)
-        if status != errSecSuccess {
-            lastError = "Couldn't store the password in the Keychain (error \(status))."
-        }
+        // Durable app-group copy (survives uninstall) + Keychain (best effort).
+        Passwords.write(password, for: account.id)
         await register(account)
         await clearErrors(account)
         await refreshPreferredEndpoint(account)
@@ -90,7 +88,7 @@ final class AccountsModel {
     func delete(_ account: Account) async {
         accounts.removeAll { $0.id == account.id }
         AccountStore.save(accounts)
-        Keychain.deletePassword(for: account.id)
+        Passwords.delete(for: account.id)
         EndpointStore.forget(account.id)
         do {
             try await NSFileProviderManager.remove(domain(for: account))

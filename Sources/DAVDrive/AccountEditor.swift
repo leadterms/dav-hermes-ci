@@ -29,7 +29,7 @@ struct AccountEditor: View {
         _lanURLString = State(initialValue: account?.lanURLString ?? "")
         _wanURLString = State(initialValue: account?.wanURLString ?? "")
         _username = State(initialValue: account?.username ?? "")
-        _password = State(initialValue: account.flatMap { Keychain.password(for: $0.id) } ?? "")
+        _password = State(initialValue: account.flatMap { Passwords.password(for: $0.id) } ?? "")
         _pinnedCertificate = State(initialValue: account?.pinnedCertificate)
     }
 
