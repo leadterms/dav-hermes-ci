@@ -1,0 +1,184 @@
+import Foundation
+import Security
+
+/// The app group shared by the app and its File Provider extension.
+public enum AppGroup {
+    static let defaultIdentifier = "group.io.github.crazyquark.davdrive"
+
+    /// SideStore and AltStore rename app groups for the signing team and list
+    /// the new names under ALTAppGroups in Info.plist, so prefer those.
+    public static let identifier: String = {
+        let listed = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
+        return listed.first { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }
+            ?? defaultIdentifier
+    }()
+
+    public static var defaults: UserDefaults { UserDefaults(suiteName: identifier) ?? .standard }
+}
+
+/// A WebDAV server the user added, reachable by one or two addresses. The
+/// password and any Cloudflare Access credentials live in the Keychain.
+public struct Account: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    /// The address while on the same network as the server (http or https).
+    public var lanURLString: String
+    /// The fixed public endpoint (https only). Cloudflare Access, once added,
+    /// only ever sits in front of this one.
+    public var wanURLString: String
+    public var username: String
+    /// Optional pinned certificate for a self-signed LAN address: the host of
+    /// that address must present exactly this certificate.
+    public var pinnedCertificate: Data?
+
+    public init(id: String = UUID().uuidString, name: String,
+                lanURLString: String = "", wanURLString: String = "", username: String,
+                pinnedCertificate: Data? = nil) {
+        self.id = id
+        self.name = name
+        self.lanURLString = lanURLString
+        self.wanURLString = wanURLString
+        self.username = username
+        self.pinnedCertificate = pinnedCertificate
+    }
+
+    // MARK: URLs
+
+    /// A URL that must exist (non-nil) for the account to be usable.
+    public var lanURL: URL? { Self.parse(lanURLString, httpsOnly: false) }
+    /// https only: the public endpoint never degrades to plain http.
+    public var wanURL: URL? { Self.parse(wanURLString, httpsOnly: true) }
+
+    public var hasLAN: Bool { !lanURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    public var hasWAN: Bool { !wanURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private static func parse(_ string: String, httpsOnly: Bool) -> URL? {
+        var string = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if string.isEmpty { return nil }
+        if !string.contains("://") { string = "https://" + string }
+        guard let url = URL(string: string), let scheme = url.scheme?.lowercased(),
+              url.host() != nil else { return nil }
+        if httpsOnly, scheme != "https" { return nil }
+        if !["http", "https"].contains(scheme) { return nil }
+        return url
+    }
+
+    // MARK: Coding
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, lanURLString, wanURLString, username, pinnedCertificate
+        /// Pre-dual-endpoint accounts stored one `urlString`; it was the public
+        /// address, so it migrates to the WAN endpoint.
+        case legacyURL = "urlString"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        lanURLString = try container.decodeIfPresent(String.self, forKey: .lanURLString) ?? ""
+        wanURLString = try container.decodeIfPresent(String.self, forKey: .wanURLString) ?? ""
+        pinnedCertificate = try container.decodeIfPresent(Data.self, forKey: .pinnedCertificate)
+        if lanURLString.isEmpty && wanURLString.isEmpty {
+            wanURLString = try container.decodeIfPresent(String.self, forKey: .legacyURL) ?? ""
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(lanURLString, forKey: .lanURLString)
+        try container.encode(wanURLString, forKey: .wanURLString)
+        try container.encode(username, forKey: .username)
+        try container.encodeIfPresent(pinnedCertificate, forKey: .pinnedCertificate)
+    }
+}
+
+/// Accounts as JSON in the app group's defaults, readable by the extension.
+public enum AccountStore {
+    private static let key = "accounts"
+
+    public static func load() -> [Account] {
+        guard let data = AppGroup.defaults.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([Account].self, from: data)) ?? []
+    }
+
+    public static func save(_ accounts: [Account]) {
+        AppGroup.defaults.set(try? JSONEncoder().encode(accounts), forKey: key)
+    }
+
+    public static func account(id: String) -> Account? { load().first { $0.id == id } }
+
+    /// The endpoint(s) an account is reachable at, in preference order.
+    public static func endpoints(forAccountID id: String) throws -> [Endpoint] {
+        guard let account = account(id: id) else { throw DAVError.invalidURL }
+        let password = Keychain.password(for: id) ?? ""
+        var endpoints: [Endpoint] = []
+        if let url = account.lanURL {
+            endpoints.append(Endpoint(url: url, username: account.username, password: password,
+                                      isWan: false, pinnedCertificate: account.pinnedCertificate))
+        }
+        if let url = account.wanURL {
+            endpoints.append(Endpoint(url: url, username: account.username, password: password, isWan: true))
+        }
+        guard !endpoints.isEmpty else { throw DAVError.invalidURL }
+        return endpoints
+    }
+
+    /// One client per call, so edits to the account (URLs, ignore rules, the
+    /// later Cloudflare credentials) apply right away. Starts from the last
+    /// known good endpoint, then falls back to the other one per request.
+    public static func client(forAccountID id: String) throws -> WebDAVClient {
+        let endpoints = try endpoints(forAccountID: id)
+        let preferred: EndpointMode
+        if let remembered = EndpointStore.lastGood(forAccountID: id),
+           endpoints.contains(where: { $0.isWan == (remembered == .wan) }) {
+            preferred = remembered
+        } else {
+            preferred = .wan // the public endpoint is the safe default
+        }
+        return WebDAVClient(endpoints: endpoints, startMode: preferred) { mode in
+            EndpointStore.remember(mode, forAccountID: id)
+        }
+    }
+}
+
+/// Passwords in a Keychain access group both targets share (the app group).
+public enum Keychain {
+    private static let service = "io.github.crazyquark.davdrive.account"
+
+    private static func query(_ id: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: id,
+            kSecAttrAccessGroup as String: AppGroup.identifier,
+        ]
+    }
+
+    public static func password(for id: String) -> String? {
+        var query = query(id)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    public static func setPassword(_ password: String, for id: String) -> OSStatus {
+        SecItemDelete(query(id) as CFDictionary)
+        var item = query(id)
+        item[kSecValueData as String] = Data(password.utf8)
+        // The extension may run while the device is locked (after first unlock).
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        return SecItemAdd(item as CFDictionary, nil)
+    }
+
+    public static func deletePassword(for id: String) {
+        SecItemDelete(query(id) as CFDictionary)
+    }
+}
