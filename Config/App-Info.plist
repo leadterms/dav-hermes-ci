@@ -11,6 +11,11 @@
 	<!-- SideStore/AltStore rewrite app group IDs for the signing team and list the result here. -->
 	<key>ALTAppGroups</key>
 	<array>
+		<string>group.36bc655743a2bdd2.1</string>
+		<string>group.36bc655743a2bdd2.2</string>
+		<string>group.36bc655743a2bdd2.3</string>
+		<string>group.36bc655743a2bdd2.4</string>
+		<string>group.36bc655743a2bdd2.5</string>
 		<string>group.io.github.crazyquark.davdrive</string>
 	</array>
 	<key>NSAppTransportSecurity</key>

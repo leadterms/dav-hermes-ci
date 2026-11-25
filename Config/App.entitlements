@@ -4,7 +4,11 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.io.github.crazyquark.davdrive</string>
+		<string>group.36bc655743a2bdd2.1</string>
+		<string>group.36bc655743a2bdd2.2</string>
+		<string>group.36bc655743a2bdd2.3</string>
+		<string>group.36bc655743a2bdd2.4</string>
+		<string>group.36bc655743a2bdd2.5</string>
 	</array>
 </dict>
 </plist>

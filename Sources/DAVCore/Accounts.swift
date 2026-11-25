@@ -3,10 +3,15 @@ import Security
 
 /// The app group shared by the app and its File Provider extension.
 public enum AppGroup {
-    static let defaultIdentifier = "group.io.github.crazyquark.davdrive"
+    /// The group the user's signing profile actually grants (verified from the
+    /// profile: five `group.36bc655743a2bdd2.<n>` entry). A name the profile
+    /// does not grant yields no container, which breaks both the durable
+    /// password copy and the extension's access to the account.
+    static let defaultIdentifier = "group.36bc655743a2bdd2.1"
 
-    /// SideStore and AltStore rename app groups for the signing team and list
-    /// the new names under ALTAppGroups in Info.plist, so prefer those.
+    /// SideStore/AltStore rewrite app groups for the signing team and list the
+    /// new names under ALTAppGroups in Info.plist, so prefer those; the first
+    /// one with a real container wins.
     public static let identifier: String = {
         let listed = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
         return listed.first { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }
@@ -150,11 +155,16 @@ public enum Keychain {
     private static let service = "io.github.crazyquark.davdrive.account"
 
     private static func query(_ id: String) -> [String: Any] {
+        // No kSecAttrAccessGroup: an app group name is not a keychain access
+        // group, and the signing profile only grants keychain groups shaped
+        // "<TEAMID>.*". Without the attribute the item lives in the app's own
+        // default keychain group, which the profile always grants, so the app
+        // can always keep and read it. The extension reads the shared app
+        // group file instead.
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: id,
-            kSecAttrAccessGroup as String: AppGroup.identifier,
         ]
     }
 
