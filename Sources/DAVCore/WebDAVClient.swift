@@ -390,6 +390,13 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
         guard url.host() == original.url?.host() else {
             return completionHandler(nil)
         }
+        // A redirect into a login page (OpenList bounces unauthenticated /dav
+        // requests to /login) is a credential failure, not a folder redirect:
+        // following it just hammers the login endpoint, whose rate limit
+        // answers 429. Refuse it so the request fails fast instead.
+        if url.path.contains("/login") {
+            return completionHandler(nil)
+        }
         guard original.httpMethod != "GET" else {
             return completionHandler(request)
         }
