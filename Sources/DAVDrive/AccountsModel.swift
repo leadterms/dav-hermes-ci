@@ -33,7 +33,9 @@ final class AccountsModel {
         }
         AccountStore.save(accounts)
         // Durable app-group copy (survives uninstall) + Keychain (best effort).
-        Passwords.write(password, for: account.id)
+        if !Passwords.write(password, for: account.id), !password.isEmpty {
+            lastError = "The password wasn't kept: the shared storage (\(AppGroup.identifier)) isn't available in this install, so it would be lost on the next install and Files can't read the server. Reinstall with a signing profile that grants the app group."
+        }
         await register(account)
         await clearErrors(account)
         ProviderDiagnostics.clear(forAccountID: account.id)

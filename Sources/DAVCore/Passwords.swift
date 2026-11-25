@@ -26,28 +26,33 @@ public enum Passwords {
 
     /// Store the durable app-group copy, then the Keychain. A missing
     /// keychain-access-groups entitlement only disables the copy; the file
-    /// keeps the password usable.
-    public static func write(_ password: String, for id: String) {
-        guard let url = url(for: id) else { return }
+    /// keeps the password usable. Reports whether the durable file exists,
+    /// because when the shared container isn't available the password would
+    /// otherwise be silently lost on the next install.
+    @discardableResult
+    public static func write(_ password: String, for id: String) -> Bool {
+        guard let url = url(for: id) else { return false }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = password.data(using: .utf8) {
-            // Usable while locked, after the first unlock, like the Keychain
-            // item, so background File Provider sync keeps working.
-            let dir = url.deletingLastPathComponent()
-            let tmp = dir.appendingPathComponent("write-\(UUID().uuidString)")
-            do {
-                try data.write(to: tmp, options: .atomic)
-                var attrs = try FileManager.default.attributesOfItem(atPath: tmp.path)
-                attrs[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
-                try FileManager.default.setAttributes(attrs, ofItemAtPath: tmp.path)
-                try? FileManager.default.removeItem(at: url) // an older copy
-                try FileManager.default.moveItem(at: tmp, to: url)
-            } catch {
-                try? FileManager.default.removeItem(at: tmp)
-            }
+        guard let data = password.data(using: .utf8) else { return false }
+        // Usable while locked, after the first unlock, like the Keychain
+        // item, so background File Provider sync keeps working.
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent("write-\(UUID().uuidString)")
+        var ok = false
+        do {
+            try data.write(to: tmp, options: .atomic)
+            var attrs = try FileManager.default.attributesOfItem(atPath: tmp.path)
+            attrs[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
+            try FileManager.default.setAttributes(attrs, ofItemAtPath: tmp.path)
+            try? FileManager.default.removeItem(at: url) // an older copy
+            try FileManager.default.moveItem(at: tmp, to: url)
+            ok = true
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
         }
         Keychain.setPassword(password, for: id)
+        return ok
     }
 
     public static func delete(for id: String) {
