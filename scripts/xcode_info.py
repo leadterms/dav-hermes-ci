@@ -28,6 +28,10 @@ common = {
 app = load(app_src)
 version = app["CFBundleShortVersionString"]
 build = app["CFBundleVersion"] + (f".{suffix}" if suffix else "")
+if suffix:
+    # Signing tools show the short version, not the build number, so make
+    # the short version follow the CI run too: every build is 1.<run>.
+    version = f"{version.split('.')[0]}.{suffix}"
 app.update(common)
 app.update({
     "CFBundleShortVersionString": version,
