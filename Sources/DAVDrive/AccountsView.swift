@@ -6,6 +6,7 @@ struct AccountsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var editing: EditTarget?
     @State private var resetting: Account?
+    @State private var browsing: Account?
     /// Bumped when the app comes back to the foreground: the Files extension
     /// records its errors in shared defaults from another process, so the
     /// rows only see new ones on a redraw.
@@ -40,7 +41,7 @@ struct AccountsView: View {
                             row(account)
                         }
                     } footer: {
-                        Text("Open the Files app, tap Browse and look under Locations. With one server, Files calls it DAV Drive. If syncing is stuck, swipe right on the server and tap Reset Sync.")
+                        Text("Tap the list icon on a server to read its folders right here. To use them in other apps, open the Files app, tap Browse and look under Locations. With one server, Files calls it DAV Drive. If syncing is stuck, swipe right on the server and tap Reset Sync.")
                     }
                     Section {
                         NavigationLink("Ignore Rules") { IgnoreRulesView() }
@@ -61,6 +62,9 @@ struct AccountsView: View {
                 case .new: AccountEditor(account: nil)
                 case .existing(let account): AccountEditor(account: account)
                 }
+            }
+            .sheet(item: $browsing) { account in
+                BrowserView(account: account)
             }
             .confirmationDialog(
                 "Reset \(resetting?.name ?? "")?",
@@ -116,6 +120,11 @@ struct AccountsView: View {
                     }
                 }
                 Spacer()
+                Button("Browse", systemImage: "list.bullet.rectangle") {
+                    browsing = account
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
                 Button("Open in Files", systemImage: "folder") {
                     Task { await model.openInFiles(account) }
                 }
@@ -133,6 +142,7 @@ struct AccountsView: View {
                 .tint(.orange)
         }
         .contextMenu {
+            Button("Browse", systemImage: "list.bullet.rectangle") { browsing = account }
             Button("Open in Files", systemImage: "folder") { Task { await model.openInFiles(account) } }
             Button("Edit", systemImage: "pencil") { editing = .existing(account) }
             Button("Reset Sync", systemImage: "arrow.clockwise") { resetting = account }
