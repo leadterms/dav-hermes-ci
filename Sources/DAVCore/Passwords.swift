@@ -38,9 +38,9 @@ public enum Passwords {
             let tmp = dir.appendingPathComponent("write-\(UUID().uuidString)")
             do {
                 try data.write(to: tmp, options: .atomic)
-                try FileManager.default.setAttributes(
-                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-                    of: tmp)
+                var attrs = try FileManager.default.attributesOfItem(atPath: tmp.path)
+                attrs[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
+                try FileManager.default.setAttributes(attrs, ofItemAtPath: tmp.path)
                 try? FileManager.default.removeItem(at: url) // an older copy
                 try FileManager.default.moveItem(at: tmp, to: url)
             } catch {
