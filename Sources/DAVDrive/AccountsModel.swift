@@ -133,20 +133,38 @@ final class AccountsModel {
     }
 
     private func register(_ account: Account) async {
-        do {
-            // Adding an existing identifier updates its display name.
-            try await NSFileProviderManager.add(domain(for: account))
-        } catch {
-            var message = "Couldn't add \(account.name) to Files: \(error.localizedDescription)"
-            let nsError = error as NSError
-            if nsError.domain == NSFileProviderErrorDomain,
-               nsError.code == NSFileProviderError.Code.providerNotFound.rawValue {
-                // Happens when the extension isn't registered with iOS, e.g. when
-                // the app runs inside LiveContainer, which loads no extensions.
-                message += "\n\niOS can't find DAV Drive's Files extension. Install the app normally (SideStore, iLoader…), not inside LiveContainer."
+        // Right after installing a new build the system hasn't activated the
+        // Files extension yet, so add() answers "the app is currently
+        // unavailable" (providerUnavailable). That clears on its own:
+        // retry a few times before giving up.
+        var lastErrorText = ""
+        for delay in [0.0, 2.0, 5.0, 10.0] {
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            do {
+                // Adding an existing identifier updates its display name.
+                try await NSFileProviderManager.add(domain(for: account))
+                return
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain == NSFileProviderErrorDomain,
+                   nsError.code == NSFileProviderError.Code.providerUnavailable.rawValue {
+                    lastErrorText = "The Files extension isn't up yet."
+                    continue
+                }
+                var message = "Couldn't add \(account.name) to Files: \(error.localizedDescription)"
+                if nsError.domain == NSFileProviderErrorDomain,
+                   nsError.code == NSFileProviderError.Code.providerNotFound.rawValue {
+                    // Happens when the extension isn't registered with iOS, e.g. when
+                    // the app runs inside LiveContainer, which loads no extensions.
+                    message += "\n\niOS can't find DAV Drive's Files extension. Install the app normally (SideStore, iLoader…), not inside LiveContainer."
+                }
+                lastError = message
+                return
             }
-            lastError = message
         }
+        // Still down after ~17s: it clears when the system activates the
+        // extension, which a reopen (or a restart) triggers.
+        lastError = "Couldn't add \(account.name) to Files: \(lastErrorText) Wait a minute and reopen the app, or restart the iPhone, then add it again."
     }
 
     private func domain(for account: Account) -> NSFileProviderDomain {
