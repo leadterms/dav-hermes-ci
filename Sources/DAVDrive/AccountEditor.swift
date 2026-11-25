@@ -36,12 +36,27 @@ struct AccountEditor: View {
     private var draft: Account {
         Account(
             id: original?.id ?? UUID().uuidString,
-            name: name.trimmingCharacters(in: .whitespaces).isEmpty ? (draftHost ?? "WebDAV") : name.trimmingCharacters(in: .whitespaces),
+            name: name.trimmingCharacters(in: .whitespaces).isEmpty ? (nameHostHint ?? "WebDAV") : name.trimmingCharacters(in: .whitespaces),
             lanURLString: lanURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             wanURLString: wanURLString.trimmingCharacters(in: .whitespacesAndNewlines),
             username: username,
             pinnedCertificate: pinnedCertificate
         )
+    }
+
+    /// The host of the first filled-in address, for the name placeholder.
+    /// Deliberately computed from the raw URL strings: `draft` needs this
+    /// value while it is being built, so it must never read back through
+    /// `draft` (that cycle recurses forever and overflows the stack).
+    private var nameHostHint: String? {
+        var hint: String? = nil
+        if let url = URL(string: wanURLString.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            hint = url.host()
+        }
+        if hint == nil, let url = URL(string: lanURLString.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            hint = url.host()
+        }
+        return hint
     }
 
     private var draftHost: String? {
