@@ -30,8 +30,13 @@
 		     a newer server version. -->
 		<key>NSExtensionFileProviderSupportsFailingUploadOnConflict</key>
 		<true/>
-		<key>NSExtensionFileProviderDocumentGroup</key>
-		<string>group.io.github.crazyquark.davdrive</string>
+		<!-- No NSExtensionFileProviderDocumentGroup here on purpose: the
+		     provider is local (non-replicated), so the system does not need
+		     a group for it; the account data in the shared group is reached
+		     from code via AppGroup.identifier, which follows whatever group
+		     the signing tool actually grants. A hardcoded group name in
+		     this plist mismatches a re-signed build and makes the system
+		     refuse to launch the extension (providerNotFound). -->
 	</dict>
 </dict>
 </plist>
