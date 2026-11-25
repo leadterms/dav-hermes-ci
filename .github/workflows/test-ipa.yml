@@ -56,15 +56,23 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/DAVDrive.xcarchive" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            "DEBUG_INFORMATION_FORMAT=dwarf-with-dsym" "DWARF_DSYM_FILE_COMPRESSION_TYPE=none" \
             -quiet
 
       - name: Package IPA
         run: scripts/package-ipa.sh "$RUNNER_TEMP/DAVDrive.xcarchive" "$RUNNER_TEMP/out"
 
+      - name: Package dSYMs
+        run: |
+          cd "$RUNNER_TEMP/DAVDrive.xcarchive/Products/dSYM"
+          zip -qr "$RUNNER_TEMP/out/dSYMs.zip" .
+
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: DAVDrive-unsigned-${{ github.run_number }}
-          path: ${{ runner.temp }}/out/*.ipa
+          path: |
+            ${{ runner.temp }}/out/*.ipa
+            ${{ runner.temp }}/out/dSYMs.zip
           if-no-files-found: error
           retention-days: 14
