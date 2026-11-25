@@ -291,7 +291,7 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
         <d:resourcetype/><d:getcontentlength/><d:getlastmodified/><d:creationdate/><d:getetag/><d:getcontenttype/>
         </d:prop></d:propfind>
         """.utf8)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await execute(request)
         try check(response)
         let basePath = endpoint.url.path(percentEncoded: false)
         return try MultistatusParser.parse(data).compactMap { entry in
@@ -304,9 +304,37 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
     @discardableResult
     private func send(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await execute(request)
         try check(response)
         return data
+    }
+
+    /// Issue a request, transparently absorbing 429s (Cloudflare / WebDAV
+    /// rate limits) with Retry-After-aware backoff. Bounded: each wait caps
+    /// at 10s, total wait at 20s, then the live 429 is surfaced to the
+    /// caller so check() can report it.
+    private func execute(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        var waited: TimeInterval = 0
+        var last: (Data, HTTPURLResponse)?
+        for attempt in 0..<3 {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw DAVError.badResponse }
+            last = (data, http)
+            guard http.statusCode == 429 else { return (data, http) }
+            let delay: TimeInterval
+            if let raw = http.value(forHTTPHeaderField: "Retry-After"),
+               let seconds = Double(raw), seconds >= 0 {
+                delay = min(seconds, 10)
+            } else {
+                delay = min(1.5 * pow(2, Double(attempt)), 10)
+            }
+            guard waited + delay <= 20 else { break }
+            try await Task.sleep(for: .seconds(delay))
+            waited += delay
+        }
+        // Retries exhausted: surface the last 429 for the caller's check().
+        guard let last else { throw DAVError.badResponse }
+        return last
     }
 
     private func makeRequest(_ method: String, _ url: URL, endpoint: Endpoint) -> URLRequest {
