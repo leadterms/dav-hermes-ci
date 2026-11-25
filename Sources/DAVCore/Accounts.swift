@@ -147,6 +147,38 @@ public enum AccountStore {
         return Passwords.write(trimmed, for: cfSecretKey(id))
     }
 
+    // MARK: Browser login (e-mail OTP)
+    //
+    // Cloudflare Access also lets a human log in in a browser: after the OTP
+    // the zone sets its session cookie, and a request carrying that cookie is
+    // authenticated without a service token. The app's embedded web view
+    // performs that login and the cookies are kept here, durably.
+
+    public static func cfCookieKey(_ id: String) -> String { id + ".cfcookie" }
+
+    /// One "name=value" per line, as the web view handed them over.
+    public static func cfCookies(for id: String) -> [String] {
+        guard let text = Passwords.password(for: cfCookieKey(id)) else { return [] }
+        return text.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+    }
+
+    @discardableResult
+    public static func setCFCookies(_ cookies: [String], for id: String) -> Bool {
+        let clean = cookies.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !clean.isEmpty else {
+            Passwords.delete(for: cfCookieKey(id))
+            return true
+        }
+        return Passwords.write(clean.joined(separator: "\n"), for: cfCookieKey(id))
+    }
+
+    /// The Cookie header value for the cookies a browser login produced.
+    public static func cfCookieHeader(_ cookies: [String]) -> [String: String] {
+        guard !cookies.isEmpty else { return [:] }
+        return ["Cookie": cookies.joined(separator: "; ")]
+    }
+
     /// The headers a Cloudflare Access service token adds, or empty when the
     /// account has no token configured.
     public static func cfAccessHeaders(clientID: String, secret: String) -> [String: String] {
@@ -169,7 +201,8 @@ public enum AccountStore {
                                       isWan: false, pinnedCertificate: account.pinnedCertificate))
         }
         if let url = account.wanURL {
-            let headers = cfAccessHeaders(clientID: account.wanClientID, secret: cfSecret(for: id))
+            var headers = cfAccessHeaders(clientID: account.wanClientID, secret: cfSecret(for: id))
+            headers.merge(cfCookieHeader(cfCookies(for: id))) { current, _ in current }
             endpoints.append(Endpoint(url: url, username: account.username, password: password,
                                       isWan: true, cfAccessHeaders: headers))
         }

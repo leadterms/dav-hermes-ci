@@ -17,6 +17,9 @@ struct AccountEditor: View {
     /// text, secret in the durable password store).
     @State private var wanClientID: String
     @State private var wanClientSecret: String
+    /// Cookies a browser login in the embedded web view produced.
+    @State private var cfCookies: [String]
+    @State private var showCFLogin = false
     /// Fixed for the life of the editor: the account id keys the password and
     /// token stores, so it must not change between the test and the save.
     @State private var draftID: String
@@ -39,6 +42,7 @@ struct AccountEditor: View {
         _password = State(initialValue: account.flatMap { Passwords.password(for: $0.id) } ?? "")
         _wanClientID = State(initialValue: account?.wanClientID ?? "")
         _wanClientSecret = State(initialValue: account.map { AccountStore.cfSecret(for: $0.id) } ?? "")
+        _cfCookies = State(initialValue: account.map { AccountStore.cfCookies(for: $0.id) } ?? [])
         _draftID = State(initialValue: account?.id ?? UUID().uuidString)
         _pinnedCertificate = State(initialValue: account?.pinnedCertificate)
     }
@@ -110,7 +114,8 @@ struct AccountEditor: View {
                                       isWan: false, pinnedCertificate: pinnedCertificate))
         }
         if let url = draft.wanURL {
-            let headers = AccountStore.cfAccessHeaders(clientID: wanClientID, secret: wanClientSecret)
+            var headers = AccountStore.cfAccessHeaders(clientID: wanClientID, secret: wanClientSecret)
+            headers.merge(AccountStore.cfCookieHeader(cfCookies)) { current, _ in current }
             endpoints.append(Endpoint(url: url, username: username, password: password,
                                       isWan: true, cfAccessHeaders: headers))
         }
@@ -158,6 +163,17 @@ struct AccountEditor: View {
 
                 if !wanURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Section {
+                        Button {
+                            showCFLogin = true
+                        } label: {
+                            HStack {
+                                Text("网页登录（邮箱验证码）")
+                                Spacer()
+                                Text(cfCookies.isEmpty ? "未登录" : "已登录 · \(cfCookies.count) 个 Cookie")
+                                    .foregroundStyle(cfCookies.isEmpty ? .secondary : .green)
+                            }
+                        }
+                        .disabled(draft.wanURL == nil)
                         TextField("访问密钥 ID", text: $wanClientID)
                             .textContentType(.username)
                             .textInputAutocapitalization(.never)
@@ -166,7 +182,7 @@ struct AccountEditor: View {
                     } header: {
                         Text("公网登录（Cloudflare Access）")
                     } footer: {
-                        Text("公网地址开了 Cloudflare Access 才需要填：在 Cloudflare 零信任里建一个 Service Token，把 ID 和 Secret 填这里。只对公网地址生效，局域网地址不带这两个头。")
+                        Text("公网地址开了 Cloudflare Access 才需要登录。两种方式二选一：\n1. 点「网页登录」，在弹出的网页里输邮箱验证码，登录后 Cookie 自动取回并保存，有效期跟 Cloudflare 里的会话时长一致，过期再点一次。\n2. 或者建一个 Service Token，把访问密钥 ID 和 Secret 填在这里。\n只对公网地址生效，局域网地址一个头都不带。")
                     }
                 }
 
@@ -228,6 +244,14 @@ struct AccountEditor: View {
             }
         }
         .interactiveDismissDisabled(test == .running)
+        .fullScreenCover(isPresented: $showCFLogin) {
+            if let url = draft.wanURL {
+                CFLoginView(host: url.host() ?? "", url: url) { cookies in
+                    cfCookies = cookies
+                    AccountStore.setCFCookies(cookies, for: draftID)
+                }
+            }
+        }
     }
 
     @ViewBuilder private var testStatus: some View {
@@ -278,6 +302,7 @@ struct AccountEditor: View {
         if !AccountStore.setCFSecret(wanClientSecret, for: draftID) {
             model.lastError = "P-02 密码没能保存，重装后要重新输入。"
         }
+        AccountStore.setCFCookies(cfCookies, for: draftID)
         await model.save(draft, password: password)
         dismiss()
     }

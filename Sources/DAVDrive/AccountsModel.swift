@@ -93,6 +93,7 @@ final class AccountsModel {
         AccountStore.save(accounts)
         Passwords.delete(for: account.id)
         Passwords.delete(for: AccountStore.cfSecretKey(account.id))
+        Passwords.delete(for: AccountStore.cfCookieKey(account.id))
         EndpointStore.forget(account.id)
         do {
             try await NSFileProviderManager.remove(domain(for: account))
