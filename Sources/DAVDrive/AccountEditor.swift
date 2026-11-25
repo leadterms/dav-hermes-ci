@@ -170,7 +170,7 @@ struct AccountEditor: View {
                                 Text("网页登录（邮箱验证码）")
                                 Spacer()
                                 Text(cfCookies.isEmpty ? "未登录" : "已登录 · \(cfCookies.count) 个 Cookie")
-                                    .foregroundStyle(cfCookies.isEmpty ? .secondary : .green)
+                                    .foregroundStyle(cfCookies.isEmpty ? Color.secondary : Color.green)
                             }
                         }
                         .disabled(draft.wanURL == nil)

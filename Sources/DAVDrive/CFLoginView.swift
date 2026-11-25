@@ -26,7 +26,7 @@ struct CFLoginView: View {
                     Text(cookieCount.map { "已取回 \($0) 个登录 Cookie，正在用它们访问。" }
                           ?? "完成邮箱验证码后，登录状态会自动取回。")
                         .font(.footnote)
-                        .foregroundStyle(cookieCount != nil ? .green : .secondary)
+                        .foregroundStyle(cookieCount != nil ? Color.green : Color.secondary)
                         .lineLimit(2)
                     if cookieCount != nil {
                         Button("完成") { dismiss() }
@@ -55,7 +55,7 @@ struct CFLoginWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let view = WKWebView()
         view.navigationDelegate = context.coordinator
-        view.load(URLRequest(url))
+        view.load(URLRequest(url: url))
         return view
     }
 
@@ -80,8 +80,10 @@ struct CFLoginWebView: UIViewRepresentable {
         private func pullCookies(from webView: WKWebView) {
             let host = self.parent.host
             Task { @MainActor in
-                let all = await webView.configuration.websiteDataStore
-                    .httpCookieStore.getAllCookies()
+                let store = webView.configuration.websiteDataStore.httpCookieStore
+                let all: [HTTPCookie] = await withCheckedContinuation { continuation in
+                    store.getAllCookies { continuation.resume(returning: $0) }
+                }
                 let normalized = host.lowercased()
                 let values = all
                     .filter { cookie in
