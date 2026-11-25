@@ -86,7 +86,8 @@ struct AccountEditor: View {
         } else {
             lines.append("P-01 尚无密码副本：输入一次并保存 (P-01 No password copy yet: enter it once and save)")
         }
-        lines.append("共享组 (Shared group): \(d.groupID)\(d.groupAvailable ? "" : "（不可用）(unavailable)"))
+        let availability = d.groupAvailable ? "" : "（不可用）(unavailable)"
+        lines.append("共享组 (Shared group): \(d.groupID)\(availability)")
         return lines.joined(separator: "\n")
     }
 
