@@ -34,7 +34,7 @@ final class AccountsModel {
         AccountStore.save(accounts)
         // Durable app-group copy (survives uninstall) + Keychain (best effort).
         if !Passwords.write(password, for: account.id), !password.isEmpty {
-            lastError = "The password wasn't kept: the shared storage (\(AppGroup.identifier)) isn't available in this install, so it would be lost on the next install and Files can't read the server. Reinstall with a signing profile that grants the app group."
+            lastError = "P-02 密码未能保存，下次安装后需要重输。 (P-02 The password could not be saved; it will need to be re-entered on the next install.)"
         }
         await register(account)
         await clearErrors(account)
@@ -82,7 +82,7 @@ final class AccountsModel {
         do {
             try await NSFileProviderManager.remove(domain(for: account))
         } catch {
-            lastError = "Couldn't reset \(account.name): \(error.localizedDescription)"
+            lastError = "F-04 重置同步失败 (F-04 Failed to reset sync)"
             return
         }
         await register(account)
@@ -96,7 +96,7 @@ final class AccountsModel {
         do {
             try await NSFileProviderManager.remove(domain(for: account))
         } catch {
-            lastError = "Couldn't remove \(account.name) from Files: \(error.localizedDescription)"
+            lastError = "F-03 从文件 App 移除失败 (F-03 Failed to remove from the Files app)"
         }
     }
 
@@ -129,7 +129,7 @@ final class AccountsModel {
             components.path = url.path(percentEncoded: false)
             if let filesURL = components.url { await UIApplication.shared.open(filesURL) }
         } catch {
-            lastError = "Couldn't open Files: \(error.localizedDescription)"
+            lastError = "O-01 无法打开文件 App (O-01 Unable to open the Files app)"
         }
     }
 
@@ -150,19 +150,17 @@ final class AccountsModel {
                    nsError.code == NSFileProviderError.Code.providerNotFound.rawValue {
                     // Happens when the extension isn't registered with iOS, e.g. when
                     // the app runs inside LiveContainer, which loads no extensions.
-                    var message = "Couldn't add \(account.name) to Files: \(error.localizedDescription)"
-                    message += "\n\niOS can't find DAV Drive's Files extension. Install the app normally (SideStore, iLoader…), not inside LiveContainer."
-                    lastError = message
+                    lastError = "G-02 文件扩展不可用：iOS 找不到 DAV Drive 的文件扩展。常规安装（SideStore/iLoader 等，非 LiveContainer），且签名配置需授予 App Group（G-01）。 (G-02 Files extension unavailable: iOS cannot find DAV Drive's Files extension. Install it the standard way (SideStore/iLoader, etc., not LiveContainer), and the signing profile must grant the App Group (G-01).)"
                     return
                 }
                 if nsError.domain != NSFileProviderErrorDomain {
-                    lastError = "Couldn't add \(account.name) to Files: \(error.localizedDescription)"
+                    lastError = "F-02 无法添加到文件 (F-02 Cannot add to Files)"
                     return
                 }
                 // A FileProvider-domain error: extension not up yet, retry.
             }
         }
-        lastError = "Couldn't add \(account.name) to Files: the Files extension isn't up yet. Wait a minute and reopen the app, or restart the iPhone, then add it again."
+        lastError = "G-03 文件扩展未就绪：等 1 分钟重开 App，或重启手机后再添加一次。 (G-03 Files extension not ready: wait 1 minute and reopen the app, or restart your phone and add it again.)"
     }
 
     private func domain(for account: Account) -> NSFileProviderDomain {

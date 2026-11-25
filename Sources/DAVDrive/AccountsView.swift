@@ -113,7 +113,7 @@ struct AccountsView: View {
                         Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     if let lastError {
-                        Text("Files: \(lastError.message)")
+                        Text("F-01 扩展报错 (Extension error) (\(lastError.when.formatted(date: .omitted, time: .shortened))): \(lastError.message)")
                             .font(.caption2)
                             .foregroundStyle(.red)
                             .lineLimit(3)

@@ -66,23 +66,27 @@ struct AccountEditor: View {
     private var draftUsable: Bool { draft.lanURL != nil || draft.wanURL != nil }
 
     /// Says where the password comes from (or why it can't be kept), so an
-    /// empty password field is never a mystery.
+    /// empty password field is never a mystery. Short codes:
+    /// G-01 shared storage unavailable · P-01 no stored copy · P-OK stored.
     private var signInFooter: String {
         guard let id = original?.id else {
-            return "Enter the password once. It is kept in shared storage and comes back after every reinstall."
+            return "首次保存：密码只需输入这一次，以后重装都在。 (First save: you only need to enter the password this once; it will persist through reinstalls.)"
         }
-        let diagnostic = Passwords.diagnostic(for: id)
+        let d = Passwords.diagnostic(for: id)
         var lines: [String] = []
-        if !diagnostic.groupAvailable {
-            lines.append("Shared storage is missing in this install, so the password can't be kept or read back, and Files can't reach the server. The signing profile must grant the app group.")
-        } else if diagnostic.inFile {
-            lines.append("Stored password loaded from shared storage.")
-        } else if diagnostic.inKeychain {
-            lines.append("Stored password loaded from the keychain.")
-        } else {
-            lines.append("No stored password on this install yet. Enter it once and tap Save.")
+        if !d.groupAvailable {
+            lines.append("G-01 共享存储不可用（签名配置未授权 App Group）：文件 App 扩展暂不可用，密码改存本机钥匙串。 (G-01 Shared storage unavailable (signing profile does not authorize the App Group): the Files app extension is not currently usable; the password is stored in the local keychain instead.)")
         }
-        lines.append("Shared storage: \(diagnostic.groupID)")
+        if d.inFile {
+            lines.append("P-OK 密码副本：共享存储 (P-OK Password copy: shared storage)")
+        } else if d.inKeychain {
+            lines.append("P-OK 密码副本：钥匙串 (P-OK Password copy: keychain)")
+        } else if d.inLocalKeychain {
+            lines.append("P-OK 密码副本：本机钥匙串（重装保留） (P-OK Password copy: local keychain (preserved across reinstalls))")
+        } else {
+            lines.append("P-01 尚无密码副本：输入一次并保存 (P-01 No password copy yet: enter it once and save)")
+        }
+        lines.append("共享组 (Shared group): \(d.groupID)\(d.groupAvailable ? "" : "（不可用）(unavailable)"))
         return lines.joined(separator: "\n")
     }
 
@@ -219,7 +223,7 @@ struct AccountEditor: View {
             test = .ok("\(label) · \(items) item\(items == 1 ? "" : "s")")
             return true
         } catch {
-            test = .failed(error.localizedDescription)
+            test = .failed("T-01 \(error.localizedDescription)")
             return false
         }
     }
