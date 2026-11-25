@@ -225,6 +225,12 @@ struct AccountEditor: View {
     }
 
     private func saveTapped() async {
+        // Remember the password as soon as it is entered: a strong password is
+        // painful to type again, and the connection test below may fail for a
+        // reason that has nothing to do with it.
+        if let id = original?.id, !password.isEmpty {
+            Passwords.write(password, for: id)
+        }
         if case .ok = test {
             await save()
         } else if await runTest() {
