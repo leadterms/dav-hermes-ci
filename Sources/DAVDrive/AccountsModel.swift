@@ -143,6 +143,7 @@ final class AccountsModel {
             do {
                 // Adding an existing identifier updates its display name.
                 try await NSFileProviderManager.add(domain(for: account))
+                ProviderDiagnostics.mark("A-OK 已注册 (registered) \(account.name)")
                 return
             } catch {
                 let nsError = error as NSError

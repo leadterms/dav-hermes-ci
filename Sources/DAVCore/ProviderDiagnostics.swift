@@ -43,4 +43,31 @@ public enum ProviderDiagnostics {
     public static func clear(forAccountID accountID: String) {
         AppGroup.defaults.removeObject(forKey: key(accountID))
     }
+
+    // MARK: Lifecycle heartbeat
+    //
+    // "Content unavailable / unknown error" in the Files app means the system
+    // asked the extension for a listing and got nothing usable — and when the
+    // extension never even launched, no error is ever recorded, so the user
+    // sees a blank row. These marks prove whether the extension process ran.
+
+    private static let eventKey = "lastProviderEvent"
+
+    public struct Event {
+        public let message: String
+        public let when: Date
+    }
+
+    public static func mark(_ message: String) {
+        AppGroup.defaults.set([
+            "message": message,
+            "time": Date().timeIntervalSince1970,
+        ], forKey: eventKey)
+    }
+
+    public static func lastEvent() -> Event? {
+        guard let raw = AppGroup.defaults.dictionary(forKey: eventKey),
+              let message = raw["message"] as? String else { return nil }
+        return Event(message: message, when: Date(timeIntervalSince1970: raw["time"] as? TimeInterval ?? 0))
+    }
 }

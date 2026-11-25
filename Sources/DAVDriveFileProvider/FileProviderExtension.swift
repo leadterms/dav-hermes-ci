@@ -13,13 +13,18 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         self.domain = domain
         manager = NSFileProviderManager(for: domain)
         super.init()
+        // Proof the extension process exists at all: the Files app records no
+        // error when the extension simply never launches.
+        ProviderDiagnostics.mark("E-OK 已启动 init")
     }
 
     private func record(_ error: Error) {
         ProviderDiagnostics.record(error, forAccountID: domain.identifier.rawValue)
     }
 
-    func invalidate() {}
+    func invalidate() {
+        ProviderDiagnostics.mark("E-OFF 已退出 invalidate")
+    }
 
     /// Built per call so edits to the account in the app apply right away.
     private func client() throws -> WebDAVClient {
@@ -271,6 +276,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     func enumerator(for identifier: NSFileProviderItemIdentifier,
                     request: NSFileProviderRequest) throws -> NSFileProviderEnumerator {
         let accountID = domain.identifier.rawValue
+        ProviderDiagnostics.mark("E-OK 列举 \(identifier == .rootContainer ? "/" : (identifier.path ?? "?"))")
         do {
             if identifier == .trashContainer {
                 return TrashEnumerator(client: try client(), rootName: rootName, accountID: accountID)

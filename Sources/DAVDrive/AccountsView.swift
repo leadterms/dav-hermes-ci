@@ -99,6 +99,7 @@ struct AccountsView: View {
     private func row(_ account: Account) -> some View {
         let _ = tick
         let lastError = ProviderDiagnostics.lastError(forAccountID: account.id)
+        let event = ProviderDiagnostics.lastEvent()
         return Button {
             editing = .existing(account)
         } label: {
@@ -117,6 +118,17 @@ struct AccountsView: View {
                             .font(.caption2)
                             .foregroundStyle(.red)
                             .lineLimit(3)
+                    }
+                    if let event {
+                        let stopped = event.message.contains("E-OFF")
+                        Text("\(stopped ? "⚠" : "✓") \(event.message) · \(event.when.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption2)
+                            .foregroundStyle(stopped ? Color.orange : Color.green)
+                            .lineLimit(2)
+                    } else {
+                        Text("F-05 扩展从未启动 (extension never ran)")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
                     }
                 }
                 Spacer()
