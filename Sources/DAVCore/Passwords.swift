@@ -28,13 +28,24 @@ public enum Passwords {
     /// keychain-access-groups entitlement only disables the copy; the file
     /// keeps the password usable.
     public static func write(_ password: String, for id: String) {
-        if let url = url(for: id) {
-            try? FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let url = url(for: id) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = password.data(using: .utf8) {
             // Usable while locked, after the first unlock, like the Keychain
             // item, so background File Provider sync keeps working.
-            try? password.data(using: .utf8)?.write(
-                to: url, options: [.atomic, .completeUntilFirstUserAuthenticationFileProtection])
+            let dir = url.deletingLastPathComponent()
+            let tmp = dir.appendingPathComponent("write-\(UUID().uuidString)")
+            do {
+                try data.write(to: tmp, options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                    of: tmp)
+                try? FileManager.default.removeItem(at: url) // an older copy
+                try FileManager.default.moveItem(at: tmp, to: url)
+            } catch {
+                try? FileManager.default.removeItem(at: tmp)
+            }
         }
         Keychain.setPassword(password, for: id)
     }
