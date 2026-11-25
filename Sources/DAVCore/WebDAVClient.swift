@@ -421,16 +421,17 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
     /// DER bytes is the trusted anchor — a self-signed leaf, or the
     /// self-signed root/CA the server serves in its chain (standard practice
     /// for a private/self-signed CA; if a server omits its root, install the
-    /// root on that server side). Acceptance still requires the anchor to be
-    /// inside its validity period.
+    /// root on that server side). An exact DER-byte match is the acceptance
+    /// test — the pinned certificate is the only trusted anchor, and it is
+    /// inside the server's presented chain (a self-signed root/CA must be
+    /// served in the chain, since no system trust store contains it). No
+    /// separate validity check: an expired/reissued pin simply stops matching
+    /// and is rejected until the user imports the new certificate.
     private static func verifies(trust: SecTrust, certificate: SecCertificate) -> Bool {
-        let pinned = Data(SecCertificateCopyData(certificate))
+        let pinned = SecCertificateCopyData(certificate) as Data
         for i in 0..<SecTrustGetCertificateCount(trust) {
             guard let chainCert = SecTrustGetCertificateAtIndex(trust, i) else { continue }
-            guard Data(SecCertificateCopyData(chainCert)) == pinned else { continue }
-            var start = CFTimeInterval(0), end = CFTimeInterval(0)
-            if SecCertificateGetValidInterval(chainCert, &start, &end) == 0,
-               end > CFAbsoluteTimeGetCurrent() {
+            if SecCertificateCopyData(chainCert) as Data == pinned {
                 return true
             }
         }
