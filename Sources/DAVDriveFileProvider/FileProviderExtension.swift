@@ -165,17 +165,20 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
     /// Uploads new contents without silently overwriting a newer server
     /// version. The base version the system handed us (an ETag when the server
     /// sends one, else a size/mtime pair) is compared with the server's state
-    /// now; with `.failOnConflict` a changed file fails as `.fileWriteConflict`
-    /// so the system keeps both copies instead of one winning silently.
+    /// now; when the system asks for fail-on-conflict (iOS 26+), a changed
+    /// file fails with the conflict error so the system keeps both copies
+    /// instead of one winning silently.
     private func uploadContents(path: String, from newContents: URL?, item: NSFileProviderItem,
                                 baseVersion: NSFileProviderItemVersion,
                                 options: NSFileProviderModifyItemOptions,
                                 client: WebDAVClient, progress: Progress) async throws {
-        let base = baseVersion.contentVersion.flatMap { String(data: $0, encoding: .utf8) }
+        // `contentVersion` is a plain `Data` in the 26-generation SDKs and an
+        // optional `Data` in newer ones; `as? Data` keeps both compiling.
+        let base = (baseVersion.contentVersion as? Data).flatMap { String(data: $0, encoding: .utf8) }
         let current = try await client.stat(path)
         let conflicted = Self.versionChanged(base: base, current: current)
-        if conflicted, options.contains(.failOnConflict) {
-            throw NSFileProviderError(.fileWriteConflict)
+        if conflicted, Self.optionsRequestFailOnConflict(options) {
+            throw Self.conflictError()
         }
         // Second gate on the server: claim only the version we just saw.
         let ifMatch = conflicted ? nil : current.etag
@@ -186,8 +189,30 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         } catch DAVError.http(status: 412) {
             // The version moved between our stat and the PUT: that is a
             // version conflict, not a file name collision.
-            throw NSFileProviderError(.fileWriteConflict)
+            throw Self.conflictError()
         }
+    }
+
+    /// iOS 26+ can ask us to fail a conflicting write instead of letting one
+    /// copy silently win; pre-26 systems never set the bit, so this is a
+    /// no-op there.
+    private func optionsRequestFailOnConflict(_ options: NSFileProviderModifyItemOptions) -> Bool {
+        if #available(iOS 26.0, *) {
+            return options.contains(.failOnConflict)
+        }
+        return false
+    }
+
+    /// The write-conflict error. The documented iOS 26 code is
+    /// `.localVersionConflictingWithServer` (present in every 26-generation
+    /// SDK; the very latest SDKs additionally spell it `.fileWriteConflict`);
+    /// pre-26 devices get `.cannotSynchronize`, which is the honest
+    /// "don't clobber, try again later" signal.
+    private func conflictError() -> NSFileProviderError {
+        if #available(iOS 26.0, *) {
+            return NSFileProviderError(.localVersionConflictingWithServer)
+        }
+        return NSFileProviderError(.cannotSynchronize)
     }
 
     /// Whether the server's state differs from the base version. The base is an
