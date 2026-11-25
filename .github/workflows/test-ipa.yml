@@ -64,8 +64,14 @@ jobs:
 
       - name: Package dSYMs
         run: |
-          cd "$RUNNER_TEMP/DAVDrive.xcarchive/Products/dSYM"
-          zip -qr "$RUNNER_TEMP/out/dSYMs.zip" .
+          cd "$RUNNER_TEMP/DAVDrive.xcarchive"
+          if [ ! -d dSYMs ]; then
+            echo "No dSYMs folder in the archive; generating with dsymutil."
+            mkdir -p dSYMs
+            dsymutil "Products/Applications/DAVDrive.app/DAVDrive" -o "dSYMs/DAVDrive.app.dSYM"
+          fi
+          zip -qr "$RUNNER_TEMP/out/dSYMs.zip" dSYMs
+          unzip -l "$RUNNER_TEMP/out/dSYMs.zip" | head -25
 
       - name: Upload
         uses: actions/upload-artifact@v4
