@@ -16,11 +16,14 @@ public enum ProviderDiagnostics {
     }
 
     public static func record(_ error: Error, forAccountID accountID: String) {
-        let mapped = FileProviderErrors.map(error) as NSError
+        // The raw error, not the File Provider mapping: DAVCore has no access
+        // to the extension's mapper, and the original text is more useful to
+        // the user anyway.
+        let nsError = error as NSError
         AppGroup.defaults.set([
-            "domain": mapped.domain,
-            "code": mapped.code,
-            "message": mapped.localizedDescription,
+            "domain": nsError.domain,
+            "code": nsError.code,
+            "message": (error as? LocalizedError)?.errorDescription ?? nsError.localizedDescription,
             "time": Date().timeIntervalSince1970,
         ], forKey: key(accountID))
     }
