@@ -411,11 +411,23 @@ public final class WebDAVClient: NSObject, URLSessionTaskDelegate, @unchecked Se
 
     /// The pinned certificate is the only accepted anchor: the server's
     /// certificate must match it (self-signed) or chain to it.
+    ///
+    /// Built from `SecTrustCreate(_:anchors:)`, which every public SDK ships
+    /// (the dedicated `SecTrustSetPinnedCertificates` / `SecTrustSetAnchorOnly`
+    /// pair is newer and absent from older Xcode SDKs, so we use the classic
+    /// custom-anchor form: evaluating the presented chain against exactly the
+    /// pinned certificate).
     private static func verifies(trust: SecTrust, certificate: SecCertificate) -> Bool {
-        SecTrustSetPinnedCertificates(trust, [certificate] as CFArray)
-        SecTrustSetAnchorOnly(trust, true)
+        var chain: [SecCertificate] = []
+        for i in 0..<SecTrustGetCertificateCount(trust) {
+            if let cert = SecTrustGetCertificateAtIndex(trust, i) { chain.append(cert) }
+        }
+        guard !chain.isEmpty,
+              let pinned = SecTrustCreate(chain as CFArray, [certificate] as CFArray) else {
+            return false
+        }
         var error: CFError?
-        return SecTrustEvaluateWithError(trust, &error)
+        return SecTrustEvaluateWithError(pinned, &error)
     }
     #endif
 }
